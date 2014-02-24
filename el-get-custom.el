@@ -41,14 +41,14 @@
 (define-widget 'el-get-symbol 'symbol
   "A string or a symbol, rendered as a symbol"
   :match 'el-get-symbol-match
-)
+  )
 ;;; END "Fuzzy" data structure support
 
 (defconst el-get-build-recipe-body
   '(choice :tag "Format"
 
            (repeat :tag "List of shell commands"
-                    (string :doc "Note: arguments will not be shell-quoted.
+                   (string :doc "Note: arguments will not be shell-quoted.
 Choose `Evaluated expression' format for a more portable recipe" :format "%v%h"))
            (sexp :tag "Evaluated expression" :format "%t: %v%h"
                  :value `(("./configure" ,(concat "--with-emacs=" el-get-emacs)) ("make") ("make" ("install")))
@@ -118,16 +118,13 @@ definition provided by `el-get' recipes locally.
     Where to fetch the package, only meaningful for `git' and
     `http' types.
 
-:username, :pkgname
+:pkgname
 
-    For the `github' type, these specify the user name and repo
-    name to clone from Github. For example, for el-get, the user
-    name would be \"dimitri\", and the repo name would be
-    \"el-get\". As described above, the `:pkgname' property is
-    only required if the repo name on Github differs from the
-    Emacs package name. Note that the `emacsmirror' type is just
-    like the `github' type with `:username' set to
-    \"emacsmirror\".
+    For the `github' type, this specifies the repo name to clone
+    from Github. For example, for el-get, the package name would
+    be \"dimitri/el-get\". Note that the `emacsmirror' type is
+    just like the `github' type with the prefix \"emacsmirror/\"
+    automatically supplied.
 
 :build
 
