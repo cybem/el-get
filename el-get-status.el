@@ -48,6 +48,7 @@
       package-name
     (intern (format ":%s" package-name))))
 
+(defvar el-get-package-menu-buffer) ; from el-get-list-packages.el
 (defun el-get-save-package-status (package status &optional recipe)
   "Save given package status"
   (let* ((package (el-get-as-symbol package))
@@ -74,6 +75,20 @@
       (insert (el-get-print-to-string new-package-status-alist 'pretty)))
     ;; Update cache
     (setq el-get-status-cache new-package-status-alist)
+    ;; Update package menu, if it exists
+    (save-excursion
+      (when (and (bound-and-true-p el-get-package-menu-buffer)
+                 (buffer-live-p el-get-package-menu-buffer)
+                 (set-buffer el-get-package-menu-buffer)
+                 (eq major-mode 'el-get-package-menu-mode))
+        (goto-char (point-min))
+        (let ((inhibit-read-only t)
+              (name (el-get-package-name package)))
+          (re-search-forward
+           (format "^..%s[[:blank:]]+[^[:blank:]]+"
+                   (regexp-quote name)))
+          (delete-region (match-beginning 0) (match-end 0))
+          (el-get-print-package name status))))
     ;; Return the new alist
     new-package-status-alist))
 
@@ -314,12 +329,12 @@ t', this error is suppressed (but nothing is updated)."
     (unless (el-get-package-is-installed package)
       (error "Package %s is not installed. Cannot update recipe." package))
     (destructuring-bind (update-p added-disallowed removed-disallowed)
-                        (el-get-diagnosis-properties cached-recipe source)
-                        (when (or added-disallowed removed-disallowed)
-                          ;; Emit a verbose message if `noerror' is t (but still quit
-                          ;; the function).
-                          (funcall (if noerror 'el-get-verbose-message 'error)
-                                   "Tried to add non-whitelisted properties:
+        (el-get-diagnosis-properties cached-recipe source)
+      (when (or added-disallowed removed-disallowed)
+        ;; Emit a verbose message if `noerror' is t (but still quit
+        ;; the function).
+        (funcall (if noerror 'el-get-verbose-message 'error)
+                 "Tried to add non-whitelisted properties:
 
 %s
 
@@ -331,15 +346,15 @@ into/from source:
 
 %s
 Maybe you should use `el-get-update' or `el-get-reinstall' on %s instead?"
-                                   (if   added-disallowed (pp-to-string   added-disallowed) "()")
-                                   (if removed-disallowed (pp-to-string removed-disallowed) "()")
-                                   (pp-to-string cached-recipe)
-                                   (el-get-source-name cached-recipe))
-                          (return-from el-get-merge-properties-into-status))
-                        (when update-p
-                          (if save-to-file
-                              (el-get-save-package-status package "installed" source)
-                            (plist-put (cdr (assq package package-status-alist))
-                                       'recipe source))))))
+                 (if   added-disallowed (pp-to-string   added-disallowed) "()")
+                 (if removed-disallowed (pp-to-string removed-disallowed) "()")
+                 (pp-to-string cached-recipe)
+                 (el-get-source-name cached-recipe))
+        (return-from el-get-merge-properties-into-status))
+      (when update-p
+        (if save-to-file
+            (el-get-save-package-status package "installed" source)
+          (plist-put (cdr (assq package package-status-alist))
+                     'recipe source))))))
 
 (provide 'el-get-status)
