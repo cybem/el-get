@@ -19,6 +19,11 @@
 (require 'el-get-core)
 (require 'cl)
 
+(declare-function el-get-install "el-get" (package))
+(declare-function el-get-remove "el-get" (package))
+(declare-function el-get-update "el-get" (package))
+(declare-function el-get-read-package-name "el-get" (action &optional filtered))
+
 (defvar el-get-package-menu-buffer nil
   "Global var holding pointing to the package menu buffer, so
   that it can be updated from `el-get-save-package-status'")
@@ -341,11 +346,13 @@ in el-get package menu."
     (insert package-name)
     (indent-to 30 1)
     (insert status)
+    (put-text-property (line-beginning-position) (line-end-position)
+                       'font-lock-face face)
     (when desc
       (indent-to 41 1)
-      (insert (replace-regexp-in-string "\n" " " desc) "\n"))
-    (put-text-property (line-beginning-position) (line-end-position)
-                       'font-lock-face face)))
+      (insert (propertize (replace-regexp-in-string "\n" " " desc)
+                          'font-lock-face face)
+              "\n"))))
 
 (defun el-get-list-all-packages ()
   (with-current-buffer (get-buffer-create "*el-get packages*")

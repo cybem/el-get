@@ -15,6 +15,9 @@
 (require 'cl)                           ; yes I like loop
 (require 'bytecomp)
 
+(declare-function el-get-build-commands "el-get-build" (package))
+(declare-function el-get-read-package-with-status "el-get-status" (action &rest statuses))
+
 ;; byte-recompile-file:
 ;;
 ;;  - in Emacs23 will not recompile a file when the source is newer than the
@@ -102,7 +105,7 @@ With optional arg RECURSIVE, do so in all subdirectories as well."
                   (not (file-newer-than-file-p elc el)))
           do (progn
                (message "el-get-byte-compile: Cleaning stale compiled file %s" elc)
-               (delete-file elc nil)))
+               (delete-file elc)))
     ;; Process subdirectories recursively
     (when recursive
       (loop for dir in (directory-files dir 'full)

@@ -13,7 +13,13 @@
 ;;     Please see the README.md file from the same distribution
 
 (require 'el-get-core)
+(require 'el-get-recipes)
 (require 'package nil t)
+
+(declare-function el-get-package-is-installed "el-get" (package))
+;; pretend these old functions exist to keep byte compiler in 24.4 quiet
+(declare-function package-desc-doc "package" (desc))
+(declare-function package-desc-vers "package" (desc))
 
 (defcustom el-get-elpa-install-hook nil
   "Hook run after ELPA package install."
@@ -71,11 +77,19 @@ the recipe, then return nil."
       ;; that would be true on Vista, where by default only administrator is
       ;; granted to use the feature --- so hardcode those systems out
       (if (memq system-type '(ms-dos windows-nt))
-          ;; the symlink is a docs/debug feature, mkdir is ok enough
-          (make-directory (el-get-package-directory package))
+          ;; in windows, we have to actually copy the directories,
+          ;; since symlink is not exactly reliable on those systems
+          (copy-directory (el-get-elpa-package-directory package)
+                          (file-name-as-directory (expand-file-name package el-get-dir)))
         (message "%s"
                  (shell-command
                   (format "cd %s && ln -s \"%s\" \"%s\"" el-get-dir elpa-dir package)))))))
+
+(eval-when-compile
+  ;; `condition-case-unless-debug' was introduced in 24.1, but was
+  ;; actually added in 23.1 as `condition-case-no-debug'
+  (unless (fboundp 'condition-case-unless-debug)
+    (defalias 'condition-case-unless-debug 'condition-case-no-debug)))
 
 (defun el-get-elpa-install (package url post-install-fun)
   "Ask elpa to install given PACKAGE."
@@ -102,7 +116,9 @@ the recipe, then return nil."
             (elpa-new-repo
              (condition-case-unless-debug nil
                  (package--download-one-archive elpa-new-repo "archive-contents")
-               (error (message "Failed to download `%s' archive." (car archive))))
+               (error (message "Failed to download `archive-contents' for `%s' from `%s'."
+                               (car elpa-new-repo)
+                               (cdr elpa-new-repo))))
              (package-read-all-archive-contents)))
       ;; TODO: should we refresh and retry once if package-install fails?
       ;; package-install generates autoloads, byte compiles
@@ -120,20 +136,42 @@ the recipe, then return nil."
           (format "Cannot update non-installed ELPA package %s" package))
   (let* ((pkg-version
           (if (fboundp 'package-desc-version) ;; new in Emacs 24.4
-              #'(lambda (pkg) (package-desc-version (car pkg)))
-            #'package-desc-vers))
+              #'package-desc-version #'package-desc-vers))
          (installed-version
-          (funcall pkg-version (cdr (assq package package-alist))))
-         (available-version
-          (funcall pkg-version (cdr (assq package package-archive-contents)))))
-    (version-list-< installed-version available-version)))
+          (funcall pkg-version (car (el-get-as-list (cdr (assq package package-alist))))))
+         (available-packages
+          (el-get-as-list (cdr (assq package package-archive-contents)))))
+    ;; Emacs 24.4 keeps lists of available packages. `package-alist'
+    ;; is sorted by version, but `package-archive-contents' is not, so
+    ;; we should loop through it.
+    (some (lambda (pkg)
+            (version-list-< installed-version
+                            (funcall pkg-version pkg)))
+          available-packages)))
+
+(defvar el-get-elpa-do-refresh t
+  "Whether to call `package-refresh-contents' during `el-get-elpa-update'.
+
+Let-bind this variable to `once' around many `el-get-elpa-update'
+calls to ensure `package-refresh-contents' is only called the
+first time.")
 
 (defun el-get-elpa-update (package url post-update-fun)
   "Ask elpa to update given PACKAGE."
-  (package-refresh-contents)
+  (unless package--initialized
+    (package-initialize t))
+  (when el-get-elpa-do-refresh
+   (package-refresh-contents)
+   (when (eq el-get-elpa-do-refresh 'once)
+     (setq el-get-elpa-do-refresh nil)))
   (when (el-get-elpa-update-available-p package)
     (el-get-elpa-remove package url nil)
-    (package-install (el-get-as-symbol package)))
+    (package-install (el-get-as-symbol package))
+    ;; in windows, we don't have real symlinks, so its better to remove
+    ;; the directory and copy everything again
+    (when (memq system-type '(ms-dos windows-nt))
+      (delete-directory (el-get-elpa-package-directory package) t)
+      (el-get-elpa-symlink-package package)))
   (funcall post-update-fun package))
 
 (defun el-get-elpa-remove (package url post-remove-fun)
@@ -174,8 +212,8 @@ the recipe, then return nil."
   :install #'el-get-elpa-install
   :update #'el-get-elpa-update
   :remove #'el-get-elpa-remove
-  :install-hook #'el-get-elpa-install-hook
-  :remove-hook #'el-get-elpa-remove-hook
+  :install-hook 'el-get-elpa-install-hook
+  :remove-hook 'el-get-elpa-remove-hook
   :guess-website #'el-get-elpa-guess-website)
 
 ;;;
@@ -204,8 +242,10 @@ DO-NOT-UPDATE will not update the package archive contents before running this."
 
     (mapc (lambda (pkg)
             (let* ((package     (format "%s" (car pkg)))
-                   (pkg-desc    (cdr pkg))
-                   (description (package-desc-doc pkg-desc))
+                   (pkg-desc    (car (el-get-as-list (cdr pkg))))
+                   (get-summary (if (fboundp #'package-desc-summary)
+                                    #'package-desc-summary #'package-desc-doc))
+                   (description (funcall get-summary pkg-desc))
                    (pkg-deps    (package-desc-reqs pkg-desc))
                    (depends     (remq 'emacs (mapcar #'car pkg-deps)))
                    (emacs-dep   (assq 'emacs pkg-deps))
